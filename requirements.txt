@@ -11,6 +11,7 @@ openai==1.98.0
 django==5.1.2
 tensorflow==2.18.0
 torch==2.5.1
+nvidia-physicsnemo[cu12,mesh-extras,sym]
 transformers==4.45.2
 numpy==1.26.4
 pandas==2.1.1
