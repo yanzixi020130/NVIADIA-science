@@ -14,4 +14,4 @@ large_files/*
 dist/*
 output/*
 .env
-test_data/*
+test_data/
