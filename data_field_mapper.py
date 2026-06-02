@@ -179,6 +179,8 @@ def detect_fields(
     explicit_color_col: Optional[str] = None,
     explicit_time_col: Optional[str] = None,
     explicit_vector_cols: Optional[Sequence[str]] = None,
+    auto_color: bool = True,
+    auto_time: bool = True,
 ) -> FieldDetection:
     numeric_set = set(numeric_columns)
     available_scalar_fields = [column for column in columns if column in numeric_set]
@@ -202,12 +204,16 @@ def detect_fields(
             raise ValueError(f"Column '{explicit_time_col}' does not exist")
         time_reason = "User explicitly provided time_col."
         time_confidence = 1.0
-    else:
+    elif auto_time:
         time_col = _match_one(columns, TIME_ALIASES)
         if time_col and time_col not in numeric_set:
             time_col = None
         time_reason = "Detected time column from known time aliases." if time_col else "No time column alias was found."
         time_confidence = 0.9 if time_col else 0.0
+    else:
+        time_col = None
+        time_reason = "Automatic time detection disabled."
+        time_confidence = 0.0
 
     if explicit_color_col:
         color_col = resolve_column(columns, explicit_color_col)
@@ -215,7 +221,7 @@ def detect_fields(
             raise ValueError(f"Column '{explicit_color_col}' does not exist")
         color_reason = "User explicitly provided color_col."
         color_confidence = 1.0
-    else:
+    elif auto_color:
         color_col = None
         lookup = _column_lookup(columns)
         for alias in SCALAR_ALIASES:
@@ -225,6 +231,10 @@ def detect_fields(
                 break
         color_reason = "Detected scalar field from known scalar aliases." if color_col else "No scalar alias field was found."
         color_confidence = 0.9 if color_col else 0.0
+    else:
+        color_col = None
+        color_reason = "Automatic scalar field detection disabled."
+        color_confidence = 0.0
 
     if explicit_vector_cols:
         vector_cols = resolve_column_list(columns, explicit_vector_cols)

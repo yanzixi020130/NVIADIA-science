@@ -199,6 +199,9 @@ def point_cloud_to_pyvista_mesh(
         surface_alpha,
         nbr_sz,
         sample_spacing,
+        False,
+        25,
+        None,
     )
     if mesh is None:
         raise ValueError("Point-cloud reconstruction did not produce a mesh")

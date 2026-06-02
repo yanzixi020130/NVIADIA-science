@@ -5,6 +5,7 @@ import numpy as np
 
 
 VISUALIZATION_MODES = {"point_cloud", "delaunay_2d", "surface_reconstruction"}
+DEFAULT_WINDOW_SIZE = (1000, 1000)
 
 
 def _safe_taskid(taskid: str) -> str:
@@ -76,6 +77,72 @@ def _polydata(points: np.ndarray, scalars: Optional[np.ndarray]) -> Any:
     return cloud
 
 
+def _box_bounds(points: np.ndarray, explicit_bounds: Optional[Sequence[Sequence[float]]] = None) -> Tuple[np.ndarray, np.ndarray]:
+    if explicit_bounds is not None:
+        bounds = np.asarray(explicit_bounds, dtype=float)
+        if bounds.shape == (2, 3) and np.isfinite(bounds).all():
+            return bounds[0], bounds[1]
+    return points.min(axis=0), points.max(axis=0)
+
+
+def _box_boundary_points(
+    points: np.ndarray,
+    resolution: int,
+    explicit_bounds: Optional[Sequence[Sequence[float]]] = None,
+) -> np.ndarray:
+    resolution = int(max(2, min(resolution, 200)))
+    mins, maxs = _box_bounds(points, explicit_bounds)
+    if not np.isfinite(mins).all() or not np.isfinite(maxs).all():
+        return np.empty((0, 3), dtype=float)
+    if np.any(maxs <= mins):
+        return np.empty((0, 3), dtype=float)
+
+    axes = [np.linspace(mins[i], maxs[i], resolution) for i in range(3)]
+    faces: List[np.ndarray] = []
+    for fixed_axis in range(3):
+        free_axes = [axis for axis in range(3) if axis != fixed_axis]
+        grid_a, grid_b = np.meshgrid(axes[free_axes[0]], axes[free_axes[1]], indexing="ij")
+        for fixed_value in (mins[fixed_axis], maxs[fixed_axis]):
+            face = np.empty((grid_a.size, 3), dtype=float)
+            face[:, fixed_axis] = fixed_value
+            face[:, free_axes[0]] = grid_a.ravel()
+            face[:, free_axes[1]] = grid_b.ravel()
+            faces.append(face)
+    return np.unique(np.vstack(faces), axis=0)
+
+
+def _nearest_scalar_values(points: np.ndarray, scalars: np.ndarray, targets: np.ndarray) -> np.ndarray:
+    finite = np.isfinite(scalars)
+    if not finite.any() or len(targets) == 0:
+        return np.full(len(targets), np.nan, dtype=float)
+
+    source_points = points[finite]
+    source_scalars = scalars[finite]
+    values = np.empty(len(targets), dtype=float)
+    chunk_size = 1024
+    for start in range(0, len(targets), chunk_size):
+        chunk = targets[start:start + chunk_size]
+        distances = ((chunk[:, None, :] - source_points[None, :, :]) ** 2).sum(axis=2)
+        values[start:start + len(chunk)] = source_scalars[np.argmin(distances, axis=1)]
+    return values
+
+
+def _augment_box_boundary(
+    points: np.ndarray,
+    scalars: Optional[np.ndarray],
+    resolution: int,
+    explicit_bounds: Optional[Sequence[Sequence[float]]] = None,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    boundary = _box_boundary_points(points, resolution, explicit_bounds)
+    if len(boundary) == 0:
+        return points, scalars
+    augmented_points = np.vstack([points, boundary])
+    if scalars is None:
+        return augmented_points, None
+    augmented_scalars = np.concatenate([scalars, _nearest_scalar_values(points, scalars, boundary)])
+    return augmented_points, augmented_scalars
+
+
 def _build_mesh(
     points: np.ndarray,
     scalars: Optional[np.ndarray],
@@ -86,6 +153,9 @@ def _build_mesh(
     surface_alpha: Optional[float],
     nbr_sz: int,
     sample_spacing: Optional[float],
+    fill_box_boundary: bool,
+    box_boundary_resolution: int,
+    box_bounds: Optional[Sequence[Sequence[float]]],
 ) -> Tuple[Any, Optional[Any], str]:
     pv = _import_pyvista()
     if mode == "point_cloud":
@@ -102,6 +172,8 @@ def _build_mesh(
     if mode == "surface_reconstruction":
         if len(points) < 4:
             raise ValueError("surface_reconstruction requires at least 4 points")
+        if fill_box_boundary:
+            points, scalars = _augment_box_boundary(points, scalars, box_boundary_resolution, box_bounds)
         cloud = _polydata(points, scalars)
         if surface_method == "delaunay_3d":
             volume = cloud.delaunay_3d(alpha=surface_alpha or 0.0)
@@ -189,6 +261,9 @@ def render_static_visualization(
     mesh_color: str = "#9bbfc2",
     mesh_edge_color: str = "#111827",
     mesh_edge_width: float = 1.0,
+    fill_box_boundary: bool = False,
+    box_boundary_resolution: int = 25,
+    box_bounds: Optional[Sequence[Sequence[float]]] = None,
 ) -> Dict[str, Any]:
     mode = mode.lower()
     if mode not in VISUALIZATION_MODES:
@@ -206,13 +281,16 @@ def render_static_visualization(
         surface_alpha,
         nbr_sz,
         sample_spacing,
+        fill_box_boundary,
+        box_boundary_resolution,
+        box_bounds,
     )
 
     pv = _import_pyvista()
     output_dir = _output_dir(image_root, taskid)
     image_path = output_dir / f"{dataset_id}_{mode}.png"
 
-    plotter = pv.Plotter(off_screen=True, window_size=(1100, 850))
+    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
     plotter.set_background("white")
     _add_to_plotter(
         plotter,
@@ -264,7 +342,7 @@ def render_pyvista_dataset(
     image_path = output_dir / f"{dataset_id}_{mode}.png"
     dataset_path = output_dir / f"{dataset_id}_{mode}.vtp"
 
-    plotter = pv.Plotter(off_screen=True, window_size=(1100, 850))
+    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
     plotter.set_background("white")
     _add_to_plotter(
         plotter,
@@ -349,6 +427,9 @@ def render_time_animation(
     mesh_color: str = "#9bbfc2",
     mesh_edge_color: str = "#111827",
     mesh_edge_width: float = 1.0,
+    fill_box_boundary: bool = False,
+    box_boundary_resolution: int = 25,
+    box_bounds: Optional[Sequence[Sequence[float]]] = None,
 ) -> Dict[str, Any]:
     if not time_col:
         return {}
@@ -363,7 +444,7 @@ def render_time_animation(
     pv = _import_pyvista()
     output_dir = _output_dir(image_root, taskid)
     animation_path = output_dir / f"{dataset_id}_{mode}.gif"
-    plotter = pv.Plotter(off_screen=True, window_size=(1100, 850))
+    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
     plotter.set_background("white")
     plotter.open_gif(str(animation_path), fps=3)
 
@@ -380,6 +461,9 @@ def render_time_animation(
             surface_alpha,
             nbr_sz,
             sample_spacing,
+            fill_box_boundary,
+            box_boundary_resolution,
+            box_bounds,
         )
         _add_to_plotter(
             plotter,

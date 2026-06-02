@@ -89,6 +89,10 @@ class MeshAnalyzeRequest(BaseModel):
     surface_alpha: Optional[float] = None
     nbr_sz: int = Field(default=20, ge=1, le=200)
     sample_spacing: Optional[float] = None
+    auto_color: bool = True
+    auto_time: bool = True
+    fill_box_boundary: bool = False
+    box_boundary_resolution: int = Field(default=25, ge=2, le=200)
 
 
 class MeshFieldAnalysisRequest(MeshAnalyzeRequest):
@@ -278,6 +282,8 @@ def _inspect_table_mapping(
     color_col: Optional[str],
     time_col: Optional[str],
     vector_cols: Optional[str],
+    auto_color: bool = True,
+    auto_time: bool = True,
 ) -> Tuple[List[str], List[str], FieldDetection]:
     columns = [str(column) for column in df.columns]
     numeric_columns = _numeric_columns(df)
@@ -292,10 +298,24 @@ def _inspect_table_mapping(
             explicit_color_col=parsed_color_col,
             explicit_time_col=parsed_time_col,
             explicit_vector_cols=parsed_vector_cols,
+            auto_color=auto_color,
+            auto_time=auto_time,
         )
     except ValueError as exc:
         _bad_table_request(str(exc), columns)
     return columns, numeric_columns, detection
+
+
+def _coordinate_bounds(df: "pd.DataFrame", coord_cols: Sequence[str]) -> Optional[List[List[float]]]:
+    if not coord_cols:
+        return None
+    numeric_df = df[list(coord_cols)].apply(pd.to_numeric, errors="coerce")
+    numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan).dropna(subset=list(coord_cols))
+    if numeric_df.empty:
+        return None
+    mins = numeric_df.min(axis=0).astype(float).tolist()
+    maxs = numeric_df.max(axis=0).astype(float).tolist()
+    return [mins, maxs]
 
 
 def _nullable_float(value: Any) -> Optional[float]:
@@ -572,6 +592,8 @@ def _analyze_csv_point_cloud(path: Path, req: MeshAnalyzeRequest) -> Dict[str, A
         req.color_col,
         req.time_col,
         req.vector_cols,
+        auto_color=req.auto_color,
+        auto_time=req.auto_time,
     )
     point_preview = _build_point_cloud_preview(df, detection, columns, numeric_columns, req.max_points)
     pv_mesh = point_cloud_to_pyvista_mesh(
@@ -672,6 +694,8 @@ def _mesh_from_request(req: MeshAnalyzeRequest) -> Tuple[Any, Dict[str, Any]]:
             req.color_col,
             req.time_col,
             req.vector_cols,
+            auto_color=req.auto_color,
+            auto_time=req.auto_time,
         )
         point_preview = _build_point_cloud_preview(df, detection, columns, numeric_columns, req.max_points)
         pv_mesh = point_cloud_to_pyvista_mesh(
@@ -852,6 +876,8 @@ async def inspect_table(
     color_col: Optional[str] = Form(None),
     time_col: Optional[str] = Form(None),
     vector_cols: Optional[str] = Form(None),
+    auto_color: bool = Form(True),
+    auto_time: bool = Form(True),
 ) -> JSONResponse:
     filename = _safe_filename(file.filename or "uploaded-file")
     if Path(filename).suffix.lower() not in {".csv", ".txt", ".dat"}:
@@ -865,7 +891,15 @@ async def inspect_table(
     save_path.write_bytes(content)
 
     df = _read_table_file(save_path)
-    columns, numeric_columns, detection = _inspect_table_mapping(df, coord_cols, color_col, time_col, vector_cols)
+    columns, numeric_columns, detection = _inspect_table_mapping(
+        df,
+        coord_cols,
+        color_col,
+        time_col,
+        vector_cols,
+        auto_color=auto_color,
+        auto_time=auto_time,
+    )
     return JSONResponse(_build_table_inspection_response(taskid, filename, df, detection, columns, numeric_columns))
 
 
@@ -895,6 +929,10 @@ async def upload_preview(
     include_mesh_analysis: bool = Form(True),
     mesh_analysis_device: str = Form("cuda"),
     mesh_analysis_centroids: int = Form(5),
+    auto_color: bool = Form(True),
+    auto_time: bool = Form(True),
+    fill_box_boundary: bool = Form(False),
+    box_boundary_resolution: int = Form(25),
 ) -> JSONResponse:
     filename = _safe_filename(file.filename or "uploaded-file")
     dataset_id = f"ds_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -907,9 +945,19 @@ async def upload_preview(
     if save_path.suffix.lower() in {".csv", ".txt", ".dat"}:
         mesh_opacity = max(0.0, min(float(mesh_opacity), 1.0))
         mesh_edge_width = max(0.1, min(float(mesh_edge_width), 10.0))
+        box_boundary_resolution = max(2, min(int(box_boundary_resolution), 200))
         df = _read_table_file(save_path)
-        columns, numeric_columns, detection = _inspect_table_mapping(df, coord_cols, color_col, time_col, vector_cols)
+        columns, numeric_columns, detection = _inspect_table_mapping(
+            df,
+            coord_cols,
+            color_col,
+            time_col,
+            vector_cols,
+            auto_color=auto_color,
+            auto_time=auto_time,
+        )
         point_preview = _build_point_cloud_preview(df, detection, columns, numeric_columns, max_points)
+        coord_bounds = _coordinate_bounds(df, detection.coord_cols)
         try:
             visualization_info = render_static_visualization(
                 taskid=taskid,
@@ -931,6 +979,9 @@ async def upload_preview(
                 mesh_color=mesh_color,
                 mesh_edge_color=mesh_edge_color,
                 mesh_edge_width=mesh_edge_width,
+                fill_box_boundary=fill_box_boundary,
+                box_boundary_resolution=box_boundary_resolution,
+                box_bounds=coord_bounds,
             )
             animation_info = render_time_animation(
                 taskid=taskid,
@@ -955,6 +1006,9 @@ async def upload_preview(
                 mesh_color=mesh_color,
                 mesh_edge_color=mesh_edge_color,
                 mesh_edge_width=mesh_edge_width,
+                fill_box_boundary=fill_box_boundary,
+                box_boundary_resolution=box_boundary_resolution,
+                box_bounds=coord_bounds,
             )
         except ValueError as exc:
             _bad_table_request(str(exc), columns)
