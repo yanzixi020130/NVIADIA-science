@@ -119,6 +119,13 @@ class TextTo3DRequest(BaseModel):
     mesh_color: str = "#9bbfc2"
     mesh_edge_color: str = "#111827"
     mesh_edge_width: float = Field(default=1.0, ge=0.1, le=10.0)
+    colormap: str = "viridis"
+    camera_zoom: float = Field(default=1.0, gt=0.0, le=10.0)
+    canvas_size: int = Field(default=1000, ge=200, le=4000)
+    plot_title: Optional[str] = None
+    x_axis_title: Optional[str] = None
+    y_axis_title: Optional[str] = None
+    z_axis_title: Optional[str] = None
     include_raw_response: bool = False
 
 
@@ -926,6 +933,9 @@ async def upload_preview(
     mesh_color: str = Form("#9bbfc2"),
     mesh_edge_color: str = Form("#111827"),
     mesh_edge_width: float = Form(1.0),
+    colormap: str = Form("viridis"),
+    camera_zoom: float = Form(1.0),
+    canvas_size: int = Form(1000),
     include_mesh_analysis: bool = Form(True),
     mesh_analysis_device: str = Form("cuda"),
     mesh_analysis_centroids: int = Form(5),
@@ -933,6 +943,10 @@ async def upload_preview(
     auto_time: bool = Form(True),
     fill_box_boundary: bool = Form(False),
     box_boundary_resolution: int = Form(25),
+    plot_title: Optional[str] = Form(None),
+    x_axis_title: Optional[str] = Form(None),
+    y_axis_title: Optional[str] = Form(None),
+    z_axis_title: Optional[str] = Form(None),
 ) -> JSONResponse:
     filename = _safe_filename(file.filename or "uploaded-file")
     dataset_id = f"ds_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -945,7 +959,10 @@ async def upload_preview(
     if save_path.suffix.lower() in {".csv", ".txt", ".dat"}:
         mesh_opacity = max(0.0, min(float(mesh_opacity), 1.0))
         mesh_edge_width = max(0.1, min(float(mesh_edge_width), 10.0))
+        camera_zoom = max(0.1, min(float(camera_zoom), 10.0))
+        canvas_size = max(200, min(int(canvas_size), 4000))
         box_boundary_resolution = max(2, min(int(box_boundary_resolution), 200))
+        axis_titles = (x_axis_title, y_axis_title, z_axis_title)
         df = _read_table_file(save_path)
         columns, numeric_columns, detection = _inspect_table_mapping(
             df,
@@ -979,9 +996,14 @@ async def upload_preview(
                 mesh_color=mesh_color,
                 mesh_edge_color=mesh_edge_color,
                 mesh_edge_width=mesh_edge_width,
+                colormap=colormap,
+                camera_zoom=camera_zoom,
+                canvas_size=canvas_size,
                 fill_box_boundary=fill_box_boundary,
                 box_boundary_resolution=box_boundary_resolution,
                 box_bounds=coord_bounds,
+                plot_title=plot_title,
+                axis_titles=axis_titles,
             )
             animation_info = render_time_animation(
                 taskid=taskid,
@@ -1006,9 +1028,14 @@ async def upload_preview(
                 mesh_color=mesh_color,
                 mesh_edge_color=mesh_edge_color,
                 mesh_edge_width=mesh_edge_width,
+                colormap=colormap,
+                camera_zoom=camera_zoom,
+                canvas_size=canvas_size,
                 fill_box_boundary=fill_box_boundary,
                 box_boundary_resolution=box_boundary_resolution,
                 box_bounds=coord_bounds,
+                plot_title=plot_title,
+                axis_titles=axis_titles,
             )
         except ValueError as exc:
             _bad_table_request(str(exc), columns)
@@ -1094,6 +1121,11 @@ async def text_to_3d(req: TextTo3DRequest) -> JSONResponse:
 
     dataset_id = f"gen_{int(time.time())}_{uuid.uuid4().hex[:8]}"
     saved_info = _save_generated_geometry(req.taskid, dataset_id, geometry, dataset)
+    plot_title = (
+        req.plot_title.strip()
+        if req.plot_title and req.plot_title.strip()
+        else geometry.get("description") or geometry["type"]
+    )
     try:
         visualization_info = render_pyvista_dataset(
             taskid=req.taskid,
@@ -1101,7 +1133,7 @@ async def text_to_3d(req: TextTo3DRequest) -> JSONResponse:
             image_root=IMAGE_ROOT,
             dataset=dataset,
             mode=geometry["type"],
-            title=geometry.get("description") or geometry["type"],
+            title=plot_title,
             color_col=color_col,
             show_edges=req.show_edges,
             show_grid=req.show_grid,
@@ -1109,6 +1141,10 @@ async def text_to_3d(req: TextTo3DRequest) -> JSONResponse:
             mesh_color=req.mesh_color,
             mesh_edge_color=req.mesh_edge_color,
             mesh_edge_width=req.mesh_edge_width,
+            colormap=req.colormap,
+            camera_zoom=req.camera_zoom,
+            canvas_size=req.canvas_size,
+            axis_titles=(req.x_axis_title, req.y_axis_title, req.z_axis_title),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

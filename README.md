@@ -290,6 +290,13 @@ curl -s -X POST http://localhost:1101/data-processing/inspect-table \
 | `sample_spacing` | float | 可选 | `null` | 表面重建采样间距 |
 | `show_edges` | bool | 可选 | `false` | 是否显示网格边 |
 | `show_grid` | bool | 可选 | `true` | 是否显示坐标网格 |
+| `colormap` | string | 可选 | `viridis` | 标量着色使用的 colormap，例如 `inferno`、`plasma`、`magma`、`turbo` |
+| `camera_zoom` | float | 可选 | `1.0` | 视角缩放比例；`0.5` 表示缩小一半，`1.5` 表示放大 |
+| `canvas_size` | int | 可选 | `1000` | 输出画布边长（像素），始终生成正方形画布，范围 `200..4000` |
+| `plot_title` | string | 可选 | 自动生成 | PNG/GIF 图像标题 |
+| `x_axis_title` | string | 可选 | PyVista 默认值 | X 轴标题 |
+| `y_axis_title` | string | 可选 | PyVista 默认值 | Y 轴标题 |
+| `z_axis_title` | string | 可选 | PyVista 默认值 | Z 轴标题 |
 | `mesh_opacity` | float | 可选 | `1.0` | mesh 透明度，范围 `0..1` |
 | `mesh_color` | string | 可选 | `#9bbfc2` | 无标量场时的 mesh 颜色 |
 | `mesh_edge_color` | string | 可选 | `#111827` | mesh 边颜色 |
@@ -312,7 +319,14 @@ curl -s -X POST http://localhost:1101/data-processing/upload-preview \
   -F "color_col=temperature" \
   -F "vector_cols=u,v,w" \
   -F "visualization_mode=point_cloud" \
-  -F "show_grid=true"
+  -F "show_grid=true" \
+  -F "colormap=inferno" \
+  -F "camera_zoom=0.5" \
+  -F "canvas_size=800" \
+  -F "plot_title=Temperature Field" \
+  -F "x_axis_title=X / m" \
+  -F "y_axis_title=Y / m" \
+  -F "z_axis_title=Z / m"
 ```
 
 点云重建为三角网格示例：
@@ -350,6 +364,13 @@ curl -s -X POST http://localhost:1101/data-processing/upload-preview \
 | `timeout` | float | 可选 | `60.0` | 大模型请求超时秒数，范围 `1..300` |
 | `show_edges` | bool | 可选 | `true` | 渲染时是否显示三角网格边 |
 | `show_grid` | bool | 可选 | `true` | 渲染时是否显示坐标网格 |
+| `colormap` | string | 可选 | `viridis` | 标量着色使用的 colormap，例如 `inferno`、`plasma`、`magma`、`turbo` |
+| `camera_zoom` | float | 可选 | `1.0` | 视角缩放比例；`0.5` 表示缩小一半，`1.5` 表示放大 |
+| `canvas_size` | int | 可选 | `1000` | 输出画布边长（像素），始终生成正方形画布，范围 `200..4000` |
+| `plot_title` | string | 可选 | 模型描述或几何类型 | PNG 图像标题 |
+| `x_axis_title` | string | 可选 | PyVista 默认值 | X 轴标题 |
+| `y_axis_title` | string | 可选 | PyVista 默认值 | Y 轴标题 |
+| `z_axis_title` | string | 可选 | PyVista 默认值 | Z 轴标题 |
 | `mesh_opacity` | float | 可选 | `1.0` | mesh 透明度，范围 `0..1` |
 | `mesh_color` | string | 可选 | `#9bbfc2` | 无标量场时的 mesh 颜色 |
 | `mesh_edge_color` | string | 可选 | `#111827` | mesh 边颜色 |
@@ -386,7 +407,7 @@ curl -s -X POST http://localhost:1101/data-processing/upload-preview \
 ```bash
 curl -s -X POST http://localhost:1101/data-processing/text-to-3d \
   -H "Content-Type: application/json" \
-  -d "{\"taskid\":\"demo\",\"prompt\":\"生成一个三维机翼上表面的三角网格，用于科学可视化和后续 mesh 分析。机翼展长 5.0 米，根弦长 1.4 米，梢弦长 0.65 米，最大弯度 0.08，翼尖扭转角 5 度。网格分辨率使用展向 72 个采样点、弦向 28 个采样点。请优先输出 parametric_surface 类型，shape 使用 wing，parameters 中包含 span、root_chord、tip_chord、camber、twist，resolution 为 [72,28]。包含 temperature 标量场，温度沿 x 方向从 280K 线性升高到 360K。只返回合法 JSON，不要输出解释文字。\",\"output_type\":\"auto\",\"max_points\":3000,\"max_faces\":6000,\"include_mesh_analysis\":false,\"show_edges\":true,\"show_grid\":true}"
+  -d "{\"taskid\":\"demo\",\"prompt\":\"生成一个三维机翼上表面的三角网格，用于科学可视化和后续 mesh 分析。机翼展长 5.0 米，根弦长 1.4 米，梢弦长 0.65 米，最大弯度 0.08，翼尖扭转角 5 度。网格分辨率使用展向 72 个采样点、弦向 28 个采样点。请优先输出 parametric_surface 类型，shape 使用 wing，parameters 中包含 span、root_chord、tip_chord、camber、twist，resolution 为 [72,28]。包含 temperature 标量场，温度沿 x 方向从 280K 线性升高到 360K。只返回合法 JSON，不要输出解释文字。\",\"output_type\":\"auto\",\"max_points\":3000,\"max_faces\":6000,\"include_mesh_analysis\":false,\"show_edges\":true,\"show_grid\":true,\"colormap\":\"inferno\",\"camera_zoom\":0.5,\"canvas_size\":800,\"plot_title\":\"Wing Temperature Field\",\"x_axis_title\":\"X / m\",\"y_axis_title\":\"Y / m\",\"z_axis_title\":\"Z / m\"}"
 ```
 
 机翼点云示例：
@@ -615,4 +636,3 @@ JSON 预览：
 - `physicsnemo.sym` 或本地 `src.geometry.Tessellation` 负责 STL 几何采样。
 - 点云本身没有 cells，不能可靠计算面积、法向、积分和梯度。因此 CSV 点云进入 `/mesh/analyze` 或 `/mesh/field-analysis` 时，需要使用 `visualization_mode=delaunay_2d` 或 `visualization_mode=surface_reconstruction` 先重建三角网格。
 - `text-to-3d` 不直接信任大模型输出。所有点、三角面和标量场都会在服务端校验；复杂对象推荐让模型输出 `parametric_surface`，由后端确定性生成网格。
-

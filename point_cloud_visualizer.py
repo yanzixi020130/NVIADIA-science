@@ -5,7 +5,8 @@ import numpy as np
 
 
 VISUALIZATION_MODES = {"point_cloud", "delaunay_2d", "surface_reconstruction"}
-DEFAULT_WINDOW_SIZE = (1000, 1000)
+DEFAULT_CANVAS_SIZE = 1000
+AxisTitles = Tuple[Optional[str], Optional[str], Optional[str]]
 
 
 def _safe_taskid(taskid: str) -> str:
@@ -20,6 +21,63 @@ def _output_dir(image_root: Path, taskid: str) -> Path:
 
 def _url_for(path: Path, image_root: Path) -> str:
     return f"/images/{path.relative_to(image_root).as_posix()}"
+
+
+def _clean_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _clean_colormap(value: Optional[str]) -> str:
+    return _clean_text(value) or "viridis"
+
+
+def _clean_camera_zoom(value: Optional[float]) -> float:
+    try:
+        zoom = float(value if value is not None else 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(0.1, min(zoom, 10.0))
+
+
+def _clean_canvas_size(value: Optional[int]) -> int:
+    try:
+        size = int(value if value is not None else DEFAULT_CANVAS_SIZE)
+    except (TypeError, ValueError):
+        return DEFAULT_CANVAS_SIZE
+    return max(200, min(size, 4000))
+
+
+def _window_size(canvas_size: Optional[int]) -> Tuple[int, int]:
+    size = _clean_canvas_size(canvas_size)
+    return size, size
+
+
+def _resolved_axis_titles(axis_titles: Optional[AxisTitles]) -> Optional[Tuple[str, str, str]]:
+    if not axis_titles:
+        return None
+    raw_titles = (_clean_text(axis_titles[0]), _clean_text(axis_titles[1]), _clean_text(axis_titles[2]))
+    if not any(raw_titles):
+        return None
+    x_title = raw_titles[0] or "X Axis"
+    y_title = raw_titles[1] or "Y Axis"
+    z_title = raw_titles[2] or "Z Axis"
+    return x_title, y_title, z_title
+
+
+def _scalar_bar_args(color_col: Optional[str]) -> Dict[str, Any]:
+    return {
+        "title": color_col or "value",
+        "vertical": True,
+        "position_x": 0.88,
+        "position_y": 0.18,
+        "width": 0.08,
+        "height": 0.65,
+        "title_font_size": 14,
+        "label_font_size": 12,
+    }
 
 
 def _clean_points(points: Sequence[Sequence[Optional[float]]]) -> np.ndarray:
@@ -199,7 +257,7 @@ def _add_to_plotter(
     plotter: Any,
     dataset: Any,
     mode: str,
-    title: str,
+    title: Optional[str],
     color_col: Optional[str],
     show_edges: bool,
     show_grid: bool,
@@ -207,38 +265,76 @@ def _add_to_plotter(
     mesh_color: str,
     mesh_edge_color: str,
     mesh_edge_width: float,
+    colormap: str = "viridis",
+    camera_zoom: float = 1.0,
+    canvas_size: int = DEFAULT_CANVAS_SIZE,
+    axis_titles: Optional[AxisTitles] = None,
 ) -> None:
+    colormap = _clean_colormap(colormap)
+    camera_zoom = _clean_camera_zoom(camera_zoom)
     has_scalars = "color_values" in dataset.point_data or "color_values" in dataset.cell_data
     if mode == "point_cloud":
         plotter.add_mesh(
             dataset,
             scalars="color_values" if has_scalars else None,
-            cmap="viridis",
+            cmap=colormap,
             render_points_as_spheres=True,
             point_size=6,
-            scalar_bar_args={"title": color_col or "value"} if has_scalars else None,
+            scalar_bar_args=_scalar_bar_args(color_col) if has_scalars else None,
         )
     else:
         plotter.add_mesh(
             dataset,
             scalars="color_values" if has_scalars else None,
             color=None if has_scalars else mesh_color,
-            cmap="viridis",
+            cmap=colormap,
             show_edges=show_edges,
             edge_color=mesh_edge_color,
             line_width=mesh_edge_width,
             opacity=mesh_opacity,
-            scalar_bar_args={"title": color_col or "value"} if has_scalars else None,
+            scalar_bar_args=_scalar_bar_args(color_col) if has_scalars else None,
         )
-    plotter.add_title(title, font_size=12)
+    title = _clean_text(title)
+    if title:
+        plotter.add_title(title, font_size=12)
     plotter.show_axes()
+    resolved_axis_titles = _resolved_axis_titles(axis_titles)
     if show_grid:
+        grid_kwargs: Dict[str, Any] = {
+            "color": "#6b7280",
+            "grid": "back",
+            "location": "outer",
+            "ticks": "outside",
+        }
+        if resolved_axis_titles:
+            grid_kwargs.update({
+                "xtitle": resolved_axis_titles[0],
+                "ytitle": resolved_axis_titles[1],
+                "ztitle": resolved_axis_titles[2],
+            })
         try:
-            plotter.show_grid(color="#6b7280", grid="back", location="outer", ticks="outside")
+            plotter.show_grid(**grid_kwargs)
         except TypeError:
             plotter.show_grid()
+    elif resolved_axis_titles:
+        try:
+            plotter.show_bounds(
+                color="#6b7280",
+                xtitle=resolved_axis_titles[0],
+                ytitle=resolved_axis_titles[1],
+                ztitle=resolved_axis_titles[2],
+                location="outer",
+                ticks="outside",
+            )
+        except TypeError:
+            pass
     plotter.camera_position = "iso"
     plotter.reset_camera()
+    if camera_zoom != 1.0:
+        try:
+            plotter.camera.Zoom(camera_zoom)
+        except Exception:
+            pass
 
 
 def render_static_visualization(
@@ -264,6 +360,11 @@ def render_static_visualization(
     fill_box_boundary: bool = False,
     box_boundary_resolution: int = 25,
     box_bounds: Optional[Sequence[Sequence[float]]] = None,
+    plot_title: Optional[str] = None,
+    colormap: str = "viridis",
+    camera_zoom: float = 1.0,
+    canvas_size: int = DEFAULT_CANVAS_SIZE,
+    axis_titles: Optional[AxisTitles] = None,
 ) -> Dict[str, Any]:
     mode = mode.lower()
     if mode not in VISUALIZATION_MODES:
@@ -285,12 +386,13 @@ def render_static_visualization(
         box_boundary_resolution,
         box_bounds,
     )
+    title = _clean_text(plot_title) or title
 
     pv = _import_pyvista()
     output_dir = _output_dir(image_root, taskid)
     image_path = output_dir / f"{dataset_id}_{mode}.png"
 
-    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
+    plotter = pv.Plotter(off_screen=True, window_size=_window_size(canvas_size))
     plotter.set_background("white")
     _add_to_plotter(
         plotter,
@@ -304,6 +406,10 @@ def render_static_visualization(
         mesh_color,
         mesh_edge_color,
         mesh_edge_width,
+        colormap,
+        camera_zoom,
+        canvas_size,
+        axis_titles,
     )
     plotter.screenshot(str(image_path))
     plotter.close()
@@ -312,7 +418,18 @@ def render_static_visualization(
         "visualization_mode": mode,
         "image_path": str(image_path),
         "image_url": _url_for(image_path, image_root),
+        "plot_title": title,
+        "colormap": _clean_colormap(colormap),
+        "camera_zoom": _clean_camera_zoom(camera_zoom),
+        "canvas_size": _clean_canvas_size(canvas_size),
     }
+    resolved_axis_titles = _resolved_axis_titles(axis_titles)
+    if resolved_axis_titles:
+        result["axis_titles"] = {
+            "x": resolved_axis_titles[0],
+            "y": resolved_axis_titles[1],
+            "z": resolved_axis_titles[2],
+        }
     if mesh is not None:
         mesh_path = output_dir / f"{dataset_id}_{mode}.vtp"
         mesh.save(mesh_path)
@@ -335,6 +452,10 @@ def render_pyvista_dataset(
     mesh_color: str = "#9bbfc2",
     mesh_edge_color: str = "#111827",
     mesh_edge_width: float = 1.0,
+    colormap: str = "viridis",
+    camera_zoom: float = 1.0,
+    canvas_size: int = DEFAULT_CANVAS_SIZE,
+    axis_titles: Optional[AxisTitles] = None,
 ) -> Dict[str, Any]:
     """Render an already-built PyVista point cloud or mesh to PNG and VTP."""
     pv = _import_pyvista()
@@ -342,7 +463,7 @@ def render_pyvista_dataset(
     image_path = output_dir / f"{dataset_id}_{mode}.png"
     dataset_path = output_dir / f"{dataset_id}_{mode}.vtp"
 
-    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
+    plotter = pv.Plotter(off_screen=True, window_size=_window_size(canvas_size))
     plotter.set_background("white")
     _add_to_plotter(
         plotter,
@@ -356,18 +477,34 @@ def render_pyvista_dataset(
         mesh_color,
         mesh_edge_color,
         mesh_edge_width,
+        colormap,
+        camera_zoom,
+        canvas_size,
+        axis_titles,
     )
     plotter.screenshot(str(image_path))
     plotter.close()
     dataset.save(dataset_path)
 
-    return {
+    result: Dict[str, Any] = {
         "visualization_mode": mode,
         "image_path": str(image_path),
         "image_url": _url_for(image_path, image_root),
         "mesh_path": str(dataset_path),
         "mesh_url": _url_for(dataset_path, image_root),
+        "plot_title": title,
+        "colormap": _clean_colormap(colormap),
+        "camera_zoom": _clean_camera_zoom(camera_zoom),
+        "canvas_size": _clean_canvas_size(canvas_size),
     }
+    resolved_axis_titles = _resolved_axis_titles(axis_titles)
+    if resolved_axis_titles:
+        result["axis_titles"] = {
+            "x": resolved_axis_titles[0],
+            "y": resolved_axis_titles[1],
+            "z": resolved_axis_titles[2],
+        }
+    return result
 
 
 def _frame_values(
@@ -430,6 +567,11 @@ def render_time_animation(
     fill_box_boundary: bool = False,
     box_boundary_resolution: int = 25,
     box_bounds: Optional[Sequence[Sequence[float]]] = None,
+    plot_title: Optional[str] = None,
+    colormap: str = "viridis",
+    camera_zoom: float = 1.0,
+    canvas_size: int = DEFAULT_CANVAS_SIZE,
+    axis_titles: Optional[AxisTitles] = None,
 ) -> Dict[str, Any]:
     if not time_col:
         return {}
@@ -444,7 +586,7 @@ def render_time_animation(
     pv = _import_pyvista()
     output_dir = _output_dir(image_root, taskid)
     animation_path = output_dir / f"{dataset_id}_{mode}.gif"
-    plotter = pv.Plotter(off_screen=True, window_size=DEFAULT_WINDOW_SIZE)
+    plotter = pv.Plotter(off_screen=True, window_size=_window_size(canvas_size))
     plotter.set_background("white")
     plotter.open_gif(str(animation_path), fps=3)
 
@@ -465,6 +607,7 @@ def render_time_animation(
             box_boundary_resolution,
             box_bounds,
         )
+        title = _clean_text(plot_title) or title
         _add_to_plotter(
             plotter,
             dataset,
@@ -477,6 +620,10 @@ def render_time_animation(
             mesh_color,
             mesh_edge_color,
             mesh_edge_width,
+            colormap,
+            camera_zoom,
+            canvas_size,
+            axis_titles,
         )
         plotter.write_frame()
 
@@ -487,4 +634,7 @@ def render_time_animation(
         "animation_type": "gif",
         "time_col": time_col,
         "num_animation_frames": len(frames),
+        "colormap": _clean_colormap(colormap),
+        "camera_zoom": _clean_camera_zoom(camera_zoom),
+        "canvas_size": _clean_canvas_size(canvas_size),
     }
