@@ -13,5 +13,4 @@ build/*
 large_files/*
 dist/*
 output/*
-.env
 test_data/

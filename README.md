@@ -16,11 +16,12 @@
 ```text
 .
 ├── main.py                         # FastAPI 主入口
-├── data_processing_module.py       # 数据处理、点云/mesh、text-to-3d 接口
-├── point_cloud_visualizer.py       # PyVista 可视化与文件输出
-├── physicsnemo_mesh_adapter.py     # PyVista 与 PhysicsNeMo Mesh 适配
-├── text_to_3d_generator.py         # 大模型 text-to-3d 调用、解析、校验与参数化几何生成
-├── data_field_mapper.py            # 表格字段自动识别
+├── src/
+│   ├── data_processing_module.py   # 数据处理、点云/mesh、text-to-3d 接口
+│   ├── point_cloud_visualizer.py   # PyVista 可视化与文件输出
+│   ├── physicsnemo_mesh_adapter.py # PyVista 与 PhysicsNeMo Mesh 适配
+│   ├── text_to_3d_generator.py     # 大模型 text-to-3d 调用、解析、校验与参数化几何生成
+│   └── data_field_mapper.py        # 表格字段自动识别
 ├── upload/                         # 上传和生成的数据文件目录，运行时生成
 ├── images/                         # PNG/GIF/VTP 可视化输出目录，运行时生成
 └── test_data/                      # 示例测试数据

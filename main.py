@@ -17,7 +17,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from data_processing_module import router as data_processing_router
+from src.data_processing_module import router as data_processing_router
 
 # 端口从 .env 读取，给个兜底默认
 PORT = int(os.getenv("PORT", "1101"))

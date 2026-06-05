@@ -19,8 +19,8 @@ try:
 except Exception:
     pass
 
-from data_field_mapper import FieldDetection, detect_fields, parse_column_list
-from physicsnemo_mesh_adapter import (
+from .data_field_mapper import FieldDetection, detect_fields, parse_column_list
+from .physicsnemo_mesh_adapter import (
     SUPPORTED_MESH_FILE_EXTENSIONS,
     SUPPORTED_RECONSTRUCTION_MODES,
     analyze_field,
@@ -30,8 +30,8 @@ from physicsnemo_mesh_adapter import (
     pyvista_to_physicsnemo_mesh,
     read_mesh_file,
 )
-from point_cloud_visualizer import render_pyvista_dataset, render_static_visualization, render_time_animation
-from text_to_3d_generator import (
+from .point_cloud_visualizer import render_pyvista_dataset, render_static_visualization, render_time_animation
+from .text_to_3d_generator import (
     SUPPORTED_GENERATED_TYPES,
     TextTo3DGenerationError,
     call_text_to_3d_llm,
@@ -44,7 +44,7 @@ except Exception:
     pd = None
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_ROOT = BASE_DIR / "upload"
 IMAGE_ROOT = BASE_DIR / "images"
 MAX_PREVIEW_ROWS = 100
@@ -1318,4 +1318,4 @@ HTML_DEMO = """
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("data_processing_module:app", host="0.0.0.0", port=1212, reload=False)
+    uvicorn.run("src.data_processing_module:app", host="0.0.0.0", port=1212, reload=False)

@@ -185,7 +185,7 @@ def point_cloud_to_pyvista_mesh(
             "CSV point clouds require visualization_mode='delaunay_2d' or "
             "visualization_mode='surface_reconstruction' before PhysicsNeMo Mesh analysis"
         )
-    from point_cloud_visualizer import _build_mesh
+    from .point_cloud_visualizer import _build_mesh
 
     points_np = np.asarray(points, dtype=float)
     scalars_np = np.asarray(scalars, dtype=float) if len(scalars) == len(points) else None
